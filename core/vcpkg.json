@@ -1,0 +1,17 @@
+{
+  "name": "leapfirst-core",
+  "version-string": "1.0.0",
+  "dependencies": [
+    "boost-beast",
+    {
+      "name": "boost-asio",
+      "features": [
+        "ssl"
+      ]
+    },
+    "boost-system",
+    "nlohmann-json",
+    "librdkafka",
+    "simdjson"
+  ]
+}
