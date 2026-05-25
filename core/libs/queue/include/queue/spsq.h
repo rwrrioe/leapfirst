@@ -23,8 +23,8 @@ public:
 			capacity_ = 1;
 		}
 		capacity_++;
-		if (capacity_ > SIZE_MAX - 2 * kPadding) {
-			capacity_ = SIZE_MAX - 2 * kPadding;
+		if (capacity_ > SIZE_MAX - 2 * padding_) {
+			capacity_ = SIZE_MAX - 2 * padding_;
 		}
 
 		slots_ = std::allocator_traits <Allocator>::allocate(
@@ -103,7 +103,7 @@ public:
 		if (read_idx == write_idx_cache_) {
 			write_idx_cache_ = write_idx_.load(std::memory_order_acquire);
 
-			if (read_idx = write_idx_cache_) {
+			if (read_idx == write_idx_cache_) {
 				return nullptr;
 			}
 		}
@@ -123,7 +123,10 @@ public:
 		read_idx_.store(next_read_idx, std::memory_order_release);
 	}
 
-	
+	bool is_empty () const noexcept {
+		return write_idx_.load(std::memory_order_acquire) ==
+			read_idx_.load(std::memory_order_acquire);
+	}
 
 private:
 	size_t capacity_;
@@ -137,4 +140,4 @@ private:
 	alignas(cacheLineSize_) size_t read_idx_cache_ = 0;
 	alignas(cacheLineSize_) std::atomic<size_t> read_idx_ = { 0 };
 	alignas(cacheLineSize_) size_t write_idx_cache_ = 0;
-} 
+};
