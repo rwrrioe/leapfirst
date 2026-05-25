@@ -1,75 +1,50 @@
 #pragma once
-#include <cstdint>
+#include <string_view>
+#include <simdjson.h>
 #include <functional>
 
-enum class TickType : uint8_t {
-    AGG_TRADE,
-    TRADE,
-    BOOK_TICKER,
-    KLINE,
-    DEPTH,
-};
+using DispatchCallback = std::function<
+    void(std::string_view stream,
+        simdjson::ondemand::object& data)
+>;
 
-enum class SignalType : uint8_t {
-    EWMA_CROSS,
-    ZSCORE,
-    BETA,
-    CORRELATION,
-};
+inline uint64_t parse_fp8(std::string_view s) noexcept {
+    uint64_t integer = 0, frac = 0;
+    std::size_t frac_digits = 0;
 
-enum class Direction : uint8_t {
-    BUY,
-    SELL
-    NEUTRAL,
-};
+    const char* ptr = s.data();
+    const char* end = s.data() + s.size();
 
-struct AggTrade {
-    int64_t event_time;
-    int64_t trade_time;
-    int64_t agg_trade_id;
-    uint64_t prifce_fp;
-    uint64_t qty_fp;
+    while (ptr < end && *ptr != '.')
+        integer = integer * 10 + (*ptr++ - '0');
 
-    char symbol[12];
-    bool is_maker;
-    uint8_t _pad[3];
-};
+    if (ptr < end && *ptr == '.') {
+        ++ptr;
+        while (ptr < end && frac_digits < 8) {
+            frac = frac * 10 + (*ptr++ - '0');
+            ++frac_digits;
+        }
+    }
 
-struct BookTicker {
-    int64_t update_id;
-    uint64_t bid_price_fp;
-    uint64_t bid_qrt_fp;
-    uint64_t ask_qty_fp;
-    char symbok[12];
-    uint _pad[4];
-};
+    while (frac_digits++ < 8) frac *= 10;
 
-struct Kline {
-    int64_t  event_time;
-    int64_t  kline_start;     /
-    int64_t  kline_close;     
-    int64_t  first_trade_id;  
-    int64_t  last_trade_id;   
-    uint64_t open_fp;
-    uint64_t close_fp;
-    uint64_t high_fp;
-    uint64_t low_fp;
-    uint64_t base_vol_fp;
-    uint64_t quote_vol_fp;
-    uint64_t taker_base_fp;
-    uint64_t taker_quote_fp;
-    uint32_t num_trades;
-    bool     is_closed;       
-    char     symbol[12];
-    char     interval[4];
-    uint8_t  _pad[1];
-};
+    return integer * 100'000'000ULL + frac;
+}
 
-struct Signal {
-    int64_t    timestamp;
-    double     value;
-    SignalType type;
-    Direction  direction;
-    char       symbol[12];
-    uint8_t    _pad[2];
-};
+
+inline double fp8_to_double(uint64_t fp) noexcept {
+    return static_cast<double>(fp) * 1e-8;
+}
+
+inline bool symbol_is(const char* sym, std::string_view target) noexcept {
+    return std::string_view{ sym, target.size() } == target;
+}
+
+inline std::string fp8_to_string(uint64_t fp) noexcept {
+    auto integer = fp / 100'000'000ULL;
+    auto frac = fp % 100'000'000ULL;
+
+    char buf[32];
+    auto n = std::snprintf(buf, sizeof(buf), "%llu.%08llu", integer, frac);
+    return { buf, static_cast<std::size_t>(n) };
+}

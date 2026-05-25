@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "signal/tick.h"
+#include <transport/types.h>
 
 class WebSocketClient {
 public:
@@ -15,7 +16,7 @@ public:
 		int ping_interval_ms;
 	};
 
-	explicit WebSocketClient(Config cfg);
+	explicit WebSocketClient(Config cfg, DispatchCallback on_tick);
 	~WebSocketClient();
 
 	WebSocketClient(const WebSocketClient&) = delete;

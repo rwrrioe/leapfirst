@@ -16,7 +16,6 @@ target_link_libraries(transport
         OpenSSL::SSL             
         OpenSSL::Crypto
         RdKafka::rdkafka++       
-        nlohmann_json::nlohmann_json
         simdjson::simdjson
 )
 

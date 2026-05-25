@@ -1,16 +1,18 @@
-#include <transport/include/transport/websocket_client.h>
+#include <transport/websocket_client.h>
+#include <transport/types.h>
 
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
 #include <boost/beast.hpp>
 #include <boost/beast/ssl.hpp>
-#include <nlohmann/json.hpp>
+#include <simdjson.h>
 
 #include <atomic>
 #include <charconv>
 #include <chrono>
 #include <sstream>
 #include <string>
+#include <string_view>
 
 namespace asio = boost::asio;
 namespace beast = boost::beast;
@@ -18,27 +20,19 @@ namespace http = beast::http;
 namespace ssl = asio::ssl;
 namespace websocket = beast::websocket;
 using tcp = asio::ip::tcp;
-using json = nlohmann::json;
-
+using json = simdjson::ondemand::parser;
+using json_object = simdjson::ondemand::object;
 
 struct WebSocketClient::Impl : public std::enable_shared_from_this<Impl> {
 public:
-private:
-	asio::io_context io_ctx;
-	ssl::context ssl_ctx;
-	tcp::resolver resolver_;
-	websocket::stream<ssl::stream<beast::tcp_stream>> ws_;
-	beast::flat_buffer buffer_;
-	Config cfg;
-	
-
-
-	explicit Impl(Config config)
+	explicit Impl(Config config, DispatchCallback cb)
 		: cfg(std::move(config))
+		, on_tick_(std::move(cb))
 		, ssl_ctx(ssl::context::tlsv12_client)
 		, resolver_(io_ctx)
 		, ws_(io_ctx, ssl_ctx)
-	{}
+	{
+	}
 
 	void run() {
 		ws_.next_layer().set_verify_callback(ssl::host_name_verification(cfg.host));
@@ -49,8 +43,31 @@ private:
 			beast::bind_front_handler(
 				&Impl::on_resolve,
 				shared_from_this()));
+
+		io_ctx.run();
 	}
 
+	void stop() {
+		asio::post(io_ctx, [this] {
+			beast::error_code ec;
+			ws_.async_close(websocket::close_code::normal,
+				[](beast::error_code) {});
+			});
+	}
+
+private:
+	asio::io_context io_ctx;
+	ssl::context ssl_ctx;
+	tcp::resolver resolver_;
+	websocket::stream<ssl::stream<beast::tcp_stream>> ws_;
+	beast::flat_buffer buffer_;
+	Config cfg;
+	json parser_;
+	
+	DispatchCallback on_tick_;
+
+	//2^16, given that the max package <= 65kB
+	alignas(64) char pad_[65536];
 	void on_resolve(beast::error_code ec, tcp::resolver::results_type results) {
 		if (ec)
 			return;
@@ -83,8 +100,8 @@ private:
 
 		ws_.set_option(
 			websocket::stream_base::timeout::suggested(
-			beast::role_type::client));
-		
+				beast::role_type::client));
+
 		ws_.set_option(websocket::stream_base::decorator(
 			[](websocket::request_type& req)
 			{
@@ -92,7 +109,7 @@ private:
 					std::string(BOOST_BEAST_VERSION_STRING) +
 					" websocket-client-async-ssl");
 			}));
-		
+
 
 		ws_.async_handshake(cfg.host, "/",
 			beast::bind_front_handler(
@@ -120,7 +137,7 @@ private:
 		const auto* data = static_cast<const char*>(buffer_.data().data());
 		const auto size = buffer_.size();
 
-		// call dispatch here
+		dispatch({data, size});
 
 		buffer_.consume(buffer_.size());
 		ws_.async_read(
@@ -130,6 +147,36 @@ private:
 				shared_from_this()));
 	}
 
+
+	void dispatch(std::string_view msg) {
+		std::memcpy(pad_, msg.data(), msg.size());
+
+		auto doc = parser_.iterate(
+			pad_,
+			msg.size(),
+			sizeof(pad_)
+		);
+
+		std::string_view stream_name;
+		if (doc["stream"].get(stream_name) != simdjson::SUCCESS) {
+			return;
+		}
+
+		json_object data;
+		if (doc["data"].get(data) != simdjson::SUCCESS) {
+			return;
+		}
+		
+
+		on_tick_(stream_name, data);
+	}
 };
 
-WebSocketClient::WebSocketClient(Config cfg, )
+WebSocketClient::WebSocketClient (Config cfg, DispatchCallback cb)
+	: impl_(std::make_shared<Impl>(std::move(cfg), std::move(cb)))
+{}
+
+void WebSocketClient::run() { impl_->run(); }
+void WebSocketClient::stop() { impl_->stop(); }
+
+
