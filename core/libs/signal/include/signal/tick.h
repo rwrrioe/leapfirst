@@ -10,6 +10,12 @@ enum class TickType : uint8_t {
     DEPTH,
 };
 
+enum class TickSymbol : uint8_t {
+    BTCUSDT,
+    ETHUSDT,
+    UNKNOWN = 0xFF
+};
+
 struct AggTrade {
     int64_t event_time;
     int64_t trade_time;
@@ -17,9 +23,9 @@ struct AggTrade {
     uint64_t price_fp;
     uint64_t qty_fp;
 
-    char symbol[12];
+    TickSymbol symbol;
     bool is_maker;
-    uint8_t _pad[3];
+    uint8_t _pad[6];
 };
 
 struct BookTicker {
@@ -28,8 +34,8 @@ struct BookTicker {
     uint64_t bid_qty_fp;
     uint64_t ask_qty_fp;
     uint64_t ask_price_fp;
-    char symbok[12];
-    uint8_t _pad[4];
+    TickSymbol symbol;
+    uint8_t _pad[7];
 };
 
 struct Kline {
@@ -48,7 +54,7 @@ struct Kline {
     uint64_t taker_quote_fp;
     uint32_t num_trades;
     bool     is_closed;
-    char     symbol[12];
+    TickSymbol symbol;
     char     interval[4];
-    uint8_t  _pad[1];
+    uint8_t  _pad[6];
 };
