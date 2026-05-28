@@ -1,4 +1,5 @@
 ﻿#include <workers/ewma.h>
+#include <utils/utils.h>
 
 #include <immintrin.h>
 #include <csignal>
@@ -19,10 +20,11 @@ struct EwmaWorker::Impl {
 		:in_(in), out_(out) {}
 
 	void run() {
+
 		while (running_.load(std::memory_order_relaxed)) {
 			auto tick = in_.front();
 			if (!tick) {
-				spin_pause();
+				utils::spin_pause();
 				continue;
 			}
 
@@ -42,7 +44,7 @@ struct EwmaWorker::Impl {
 				sig.type = SigType::EWMA_CROSS;
 				sig.direction = (macd > 0) ? Direction::BUY : Direction::SELL;
 
-				out_.push(sig);
+				out_.try_emplace(sig);
 			}
 		}
 
@@ -54,16 +56,6 @@ struct EwmaWorker::Impl {
 		running_.store(false, std::memory_order_relaxed);
 	}
 private:
-	static void spin_pause() noexcept {
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__)
-		_mm_pause();
-#elif defined(__aarch64__) || defined(_M_ARM64)
-		asm volatile("yield" ::: "memory");
-#else
-		std::this_thread::yield();
-#endif
-	}
-
 	SPSQ<AggTrade>& in_;
 	SPSQ <Signal>& out_;
 	std::atomic<bool> running_{ true };

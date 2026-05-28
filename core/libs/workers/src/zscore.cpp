@@ -1,11 +1,10 @@
 ﻿#include <workers/zscore.h>
+#include <utils/utils.h>
 
-#include <immintrin.h>
 #include <csignal>
 #undef signal         
 #include <cmath>
 #include <atomic>
-#include <thread>
 
 #include <queue/spsq.h>
 #include <signal/signal.h>  
@@ -16,10 +15,11 @@ struct ZScoreWorker::Impl {
     explicit Impl(SPSQ<AggTrade>& in, SPSQ<Signal>& out) : in_(in), out_(out) {}
 
     void run() {
+
         while (running_.load(std::memory_order_relaxed)) {
             auto* tick = in_.front();
             if (!tick) {
-                spin_pause();
+                utils::spin_pause();
                 continue;
             }
     
@@ -48,6 +48,7 @@ struct ZScoreWorker::Impl {
                 sig.value = z;
                 sig.type = SigType::ZSCORE;
                 sig.direction = z > 0 ? Direction::SELL : Direction::BUY;
+                out_.try_emplace(sig);
             }
         }
     }
@@ -58,16 +59,6 @@ struct ZScoreWorker::Impl {
     }
 
 private:
-    static void spin_pause() noexcept {
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__)
-        _mm_pause();            
-#elif defined(__aarch64__) || defined(_M_ARM64)
-        asm volatile("yield" ::: "memory");
-#else
-        std::this_thread::yield();
-#endif
-    }
-
     uint64_t n_ = 0;
     double mean_ = 0.0, m2_ = 0.0;
     

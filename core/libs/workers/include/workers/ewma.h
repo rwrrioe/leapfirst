@@ -2,6 +2,7 @@
 #include <memory>
 #include <queue/spsq.h>
 #include <signal/tick.h>
+#include <signal/signal.h>
 
 class EwmaWorker {
 public:
