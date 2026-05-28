@@ -61,7 +61,7 @@ public:
 			read_idx_cache_ = read_idx_.load(std::memory_order_acquire);
 		}
 
-		new (&slots[write_idx + padding_]) T(std::forward<Args>(args)...);
+		new (&slots_[write_idx + padding_]) T(std::forward<Args>(args)...);
 		write_idx_.store(next_write_idx, std::memory_order_release);
 	}
 	
@@ -76,14 +76,15 @@ public:
 
 
 		if (next_write_idx == read_idx_cache_) {
-			read_idx_cache_ == read_idx_.load(std::memory_order_acquire);
+			read_idx_cache_ = read_idx_.load(std::memory_order_acquire);
 				
 			if (next_write_idx == read_idx_cache_) {
 				return false;
 			}
 		}
 
-		new (&slots[write_idx + padding_]) T(std::forward<Args>(args)...);
+		new (&slots_[write_idx + padding_]) T(std::forward<Args>(args)...);
+		write_idx_.store(next_write_idx, std::memory_order_release);
 		return true;
 	}
 
