@@ -7,6 +7,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+if(APPLE)
+    list(APPEND CMAKE_PREFIX_PATH "/opt/homebrew")
+endif()
+
 find_package(RdKafka CONFIG REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(boost_system CONFIG REQUIRED)
