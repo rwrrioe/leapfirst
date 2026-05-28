@@ -14,12 +14,16 @@ enum class SigType : uint8_t {
     CORRELATION,
 };
 
+enum class SigSymbol : uint8_t {
+    BTCUSDT,
+    ETHUSDT
+};
 
 struct Signal {
     int64_t    timestamp;
     double     value;
     SigType type;
     Direction  direction;
-    char       symbol[12];
-    uint8_t    _pad[2];
+    SigSymbol symbol;
+    uint8_t    _pad[5];
 };
