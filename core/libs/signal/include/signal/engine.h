@@ -3,9 +3,12 @@
 
 class Engine {
 public:
-	Engine() {}
-	void run() {}
+	Engine();
+	~Engine();
+	void run();
+	void stop();
 private:
 	struct Impl;
 	std::shared_ptr<Impl> impl_;
 };
+
