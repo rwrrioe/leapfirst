@@ -1,5 +1,12 @@
-#include <transport/websocket_client.h>
+﻿#include <transport/websocket_client.h>
 #include <transport/types.h>
+
+#include <openssl/x509.h>
+#include <openssl/ssl.h>
+#ifdef _WIN32
+#include <wincrypt.h>
+#pragma comment(lib, "crypt32.lib")
+#endif
 
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
@@ -28,14 +35,18 @@ public:
 	explicit Impl(Config config, DispatchCallback cb)
 		: cfg(std::move(config))
 		, on_tick_(std::move(cb))
-		, ssl_ctx(ssl::context::tlsv12_client)
+		, ssl_ctx(ssl::context::tls_client)
 		, resolver_(io_ctx)
 		, ws_(io_ctx, ssl_ctx)
 	{
 	}
 
 	void run() {
-		ws_.next_layer().set_verify_callback(ssl::host_name_verification(cfg.host));
+		ssl_ctx.set_verify_mode(ssl::verify_none);
+
+		if (!SSL_set_tlsext_host_name(ws_.next_layer().native_handle(), cfg.host.c_str())) {
+			std::printf("[WS] SNI failed\n"); fflush(stdout);
+		}
 
 		resolver_.async_resolve(
 			cfg.host,
@@ -64,13 +75,19 @@ private:
 	Config cfg;
 	json parser_;
 	
+	std::string host_header_;
 	DispatchCallback on_tick_;
 
 	//2^16, given that the max package <= 65kB
-	alignas(64) char pad_[65536];
+	static const int SIMDJSON_PADDING{ 64 };
+	alignas(64) char pad_[65536 + SIMDJSON_PADDING];
 	void on_resolve(beast::error_code ec, tcp::resolver::results_type results) {
 		if (ec)
+		{
+			std::printf("[WS] resolve failed: %s\n", ec.message().c_str());
 			return;
+		}
+		std::printf("[WS] resolved ok\n");
 
 		beast::get_lowest_layer(ws_).async_connect(
 			results,
@@ -80,21 +97,31 @@ private:
 	}
 
 	void on_connect(beast::error_code ec, tcp::resolver::results_type::endpoint_type ep) {
-		if (ec)
-			return;
+		if (ec) { std::printf("[WS] connect failed: %s\n", ec.message().c_str()); fflush(stdout); return; }
+		std::printf("[WS] connected ok\n"); fflush(stdout);
 
-		cfg.host += ":" + std::to_string(ep.port());
+		host_header_ = cfg.host + ":" + std::to_string(ep.port());
+		std::printf("[WS] host_header: %s\n", host_header_.c_str()); fflush(stdout);
 
-		ws_.next_layer().async_handshake(
-			ssl::stream_base::client,
-			beast::bind_front_handler(
-				&Impl::on_ssl_handshake,
-				shared_from_this()));
+		std::printf("[WS] starting ssl handshake...\n"); fflush(stdout);
+		
+		try {
+			ws_.next_layer().async_handshake(
+				ssl::stream_base::client,
+				beast::bind_front_handler(&Impl::on_ssl_handshake, shared_from_this()));
+			std::printf("[WS] ssl handshake posted\n"); fflush(stdout);
+		}
+		catch (const std::exception& e) {
+			std::printf("[WS] async_handshake threw: %s\n", e.what()); fflush(stdout);
+		}
+		catch (...) {
+			std::printf("[WS] async_handshake threw unknown\n"); fflush(stdout);
+		}
 	}
 
 	void on_ssl_handshake(beast::error_code ec) {
-		if (ec)
-			return;
+		if (ec) { std::printf("[WS] ssl handshake failed: %s\n", ec.message().c_str()); return; }
+		std::printf("[WS] ssl ok\n");
 
 		beast::get_lowest_layer(ws_).expires_never();
 
@@ -111,15 +138,15 @@ private:
 			}));
 
 
-		ws_.async_handshake(cfg.host, "/",
+		ws_.async_handshake(host_header_, build_path(cfg.streams),
 			beast::bind_front_handler(
 				&Impl::on_handshake,
 				shared_from_this()));
 	}
 
 	void on_handshake(beast::error_code ec) {
-		if (ec)
-			return;
+		if (ec) { std::printf("[WS] ws handshake failed: %s\n", ec.message().c_str()); return; }
+		std::printf("[WS] ws handshake ok, listening...\n");
 
 		ws_.async_read(
 			buffer_,
@@ -130,9 +157,8 @@ private:
 
 	void on_read(beast::error_code ec, std::size_t bytes_transferred)
 	{
-		if (ec)
-			//todo reconnect 
-			return;
+		if (ec) { std::printf("[WS] read failed: %s\n", ec.message().c_str()); return; }
+		//std::printf("[WS] got %zu bytes\n", bytes_transferred);
 
 		const auto* data = static_cast<const char*>(buffer_.data().data());
 		const auto size = buffer_.size();
@@ -170,13 +196,25 @@ private:
 
 		on_tick_(stream_name, data);
 	}
+
+	static std::string build_path(const std::vector<std::string>& streams) {
+		std::string path = "/stream?streams=";
+		for (std::size_t i = 0; i < streams.size(); ++i) {
+			if (i > 0) path += '/';
+			path += streams[i];
+		}
+		return path;
+	}
 };
 
 WebSocketClient::WebSocketClient (Config cfg, DispatchCallback cb)
 	: impl_(std::make_shared<Impl>(std::move(cfg), std::move(cb)))
 {}
 
+
 void WebSocketClient::run() { impl_->run(); }
 void WebSocketClient::stop() { impl_->stop(); }
+
+WebSocketClient::~WebSocketClient() { impl_->stop(); }
 
 
