@@ -1,15 +1,13 @@
 ﻿#include <workers/ewma.h>
 #include <utils/utils.h>
 
-#include <immintrin.h>
 #include <csignal>
-#undef signal        
+#undef signal
 #include <cmath>
 #include <atomic>
-#include <thread>
 
 #include <queue/spsq.h>
-#include <signal/signal.h>  
+#include <signal/signal.h>
 #include <signal/tick.h>
 #include <transport/types.h>
 
@@ -55,6 +53,7 @@ struct EwmaWorker::Impl {
 	void stop() {
 		running_.store(false, std::memory_order_relaxed);
 	}
+
 private:
 	SPSQ<AggTrade>& in_;
 	SPSQ <Signal>& out_;
@@ -67,7 +66,7 @@ private:
 };
 
 EwmaWorker::EwmaWorker(SPSQ<AggTrade>& in,
-	SPSQ<Signal>& out) 
+	SPSQ<Signal>& out)
 	: impl_(std::make_shared<Impl>(in, out))
 {}
 
