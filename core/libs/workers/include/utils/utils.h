@@ -1,11 +1,13 @@
 ﻿#include <thread>
-#include <immintrin.h>
 #ifdef _WIN32
 #include <windows.h>
+#include <immintrin.h>
+#elif defined(__APPLE__)
+    #include <pthread.h>
 #else
-#define _GNU_SOURCE
-#include <sched.h>
-#include <pthread.h>
+    #define _GNU_SOURCE
+    #include <sched.h>
+    #include <pthread.h>
 #endif
 
 namespace corepin {
@@ -17,7 +19,7 @@ namespace corepin {
             std::printf("[PIN] core %d unavailable, have %d cores\n",
                 core, (int)si.dwNumberOfProcessors);
             fflush(stdout);
-            return;  
+            return;
         }
         HANDLE thread = GetCurrentThread();
         DWORD_PTR mask = (1ULL << core);
@@ -27,6 +29,8 @@ namespace corepin {
                 core, GetLastError());
             fflush(stdout);
         }
+#elif defined(__APPLE__)
+    (void)core;
 #else
         cpu_set_t cpuset;
         CPU_ZERO(&cpuset);
@@ -47,4 +51,3 @@ namespace utils {
 #endif
     }
 }
-
