@@ -1,9 +1,9 @@
 ﻿#include <transport/kafka.h>
 #include <utils/utils.h>
-#include <librdkafka/rdkafka.h> 
-#include <atomic>             
-#include <cstdint>              
-#include <cstddef>   
+#include <librdkafka/rdkafka.h>
+#include <atomic>
+#include <cstdint>
+#include <cstddef>
 #include <signal/signal.h>
 
 struct KafkaProducer::Impl {
@@ -68,10 +68,10 @@ private:
 
         return std::snprintf(buf, buf_size,
             "{"
-            "\"ts\":%lld",
+            "\"ts\":%lld\","
             "\"sym\":\"%s\","
             "\"type\":\"%s\","
-            "\"dir\:\"%s\","
+            "\"dir\":\"%s\","
             "\"val\":%.8f"
             "}",
             static_cast<long long>(sig.timestamp),
@@ -126,7 +126,7 @@ private:
 
         utils::spin_pause();
     }
-    
+
     rd_kafka_resp_err_t try_produce(int32_t partition,
                                     SigSymbol key,
                                     std::size_t key_len,
@@ -141,7 +141,7 @@ private:
             RD_KAFKA_V_END
         );
     }
-    
+
     void produce(const Signal& sig) {
         const int len = serialize(sig, ser_buf_, sizeof(ser_buf_));
         if (len <= 0 || len >= static_cast<int>(sizeof(ser_buf_))) {
