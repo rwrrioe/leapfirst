@@ -95,38 +95,6 @@ private:
         return 2;
     }
 
-    void run() {
-        Signal* slot = nullptr;
-
-        while (running_.load(std::memory_order_relaxed)) {
-            if ((slot = ewma_.front())) {
-                //produce here
-                ewma_.pop();
-                continue;
-            }
-
-            if ((slot = zscore_.front())) {
-                //produce here
-                zscore_.pop();
-                continue;
-            }
-
-            if ((slot = beta_.front())) {
-                //produce here
-                beta_.pop();
-                continue;
-            }
-
-            if ((slot = corr_.front())) {
-                //produce here
-                corr_.pop();
-                continue;
-            }
-        }
-
-        utils::spin_pause();
-    }
-
     rd_kafka_resp_err_t try_produce(int32_t partition,
                                     SigSymbol key,
                                     std::size_t key_len,
@@ -169,6 +137,39 @@ private:
 
         ++produced_;
         if ((produced_ & 63) == 0) rd_kafka_poll(rk_, 0);
+    }
+
+
+    void run() {
+        Signal* slot = nullptr;
+
+        while (running_.load(std::memory_order_relaxed)) {
+            if ((slot = ewma_.front())) {
+                produce(*slot);
+                ewma_.pop();
+                continue;
+            }
+
+            if ((slot = zscore_.front())) {
+                produce(*slot);
+                zscore_.pop();
+                continue;
+            }
+
+            if ((slot = beta_.front())) {
+                produce(*slot);
+                beta_.pop();
+                continue;
+            }
+
+            if ((slot = corr_.front())) {
+                produce(*slot);
+                corr_.pop();
+                continue;
+            }
+        }
+
+        utils::spin_pause();
     }
 
 };
