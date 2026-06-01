@@ -1,4 +1,6 @@
-﻿#include <transport/kafka.h>
+﻿#include <boost/asio/require_concept.hpp>
+#include <boost/smart_ptr/make_shared_object.hpp>
+#include <transport/kafka.h>
 #include <utils/utils.h>
 #include <librdkafka/rdkafka.h>
 #include <atomic>
@@ -15,7 +17,39 @@ struct KafkaProducer::Impl {
         , beta_(beta), corr_(corr)
     {}
 
+    void run() {
+        Signal* slot = nullptr;
 
+        while (running_.load(std::memory_order_relaxed)) {
+            if ((slot = ewma_.front())) {
+                produce(*slot);
+                ewma_.pop();
+                continue;
+            }
+
+            if ((slot = zscore_.front())) {
+                produce(*slot);
+                zscore_.pop();
+                continue;
+            }
+
+            if ((slot = beta_.front())) {
+                produce(*slot);
+                beta_.pop();
+                continue;
+            }
+
+            if ((slot = corr_.front())) {
+                produce(*slot);
+                corr_.pop();
+                continue;
+            }
+        }
+
+        utils::spin_pause();
+    }
+
+    void stop() {running_.store(false, std::memory_order_relaxed);};
 private:
     SPSQ<Signal>& ewma_;
     SPSQ<Signal>& zscore_;
@@ -139,37 +173,16 @@ private:
         if ((produced_ & 63) == 0) rd_kafka_poll(rk_, 0);
     }
 
-
-    void run() {
-        Signal* slot = nullptr;
-
-        while (running_.load(std::memory_order_relaxed)) {
-            if ((slot = ewma_.front())) {
-                produce(*slot);
-                ewma_.pop();
-                continue;
-            }
-
-            if ((slot = zscore_.front())) {
-                produce(*slot);
-                zscore_.pop();
-                continue;
-            }
-
-            if ((slot = beta_.front())) {
-                produce(*slot);
-                beta_.pop();
-                continue;
-            }
-
-            if ((slot = corr_.front())) {
-                produce(*slot);
-                corr_.pop();
-                continue;
-            }
-        }
-
-        utils::spin_pause();
-    }
-
 };
+
+KafkaProducer::KafkaProducer(SPSQ<Signal>& ewma,
+    SPSQ<Signal>& zscore,
+    SPSQ<Signal>& beta,
+    SPSQ<Signal>& corr)
+ : impl_(std::make_shared<Impl>(ewma, zscore, beta, corr))
+{}
+
+void KafkaProducer::run() {impl_->run();}
+void KafkaProducer::stop() {impl_->stop();}
+
+KafkaProducer::~KafkaProducer() {KafkaProducer::stop();}

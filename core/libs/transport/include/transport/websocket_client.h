@@ -25,6 +25,6 @@ public:
 	void run();
 	void stop();
 private:
-	struct Impl;
+    struct Impl;
 	std::shared_ptr<Impl> impl_;
 };
