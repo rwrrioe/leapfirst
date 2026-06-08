@@ -1,5 +1,7 @@
 ﻿#include <boost/asio/require_concept.hpp>
 #include <boost/smart_ptr/make_shared_object.hpp>
+#include <locale>
+#include <string_view>
 #include <transport/kafka.h>
 #include <utils/utils.h>
 #include <librdkafka/rdkafka.h>
@@ -44,9 +46,9 @@ struct KafkaProducer::Impl {
                 corr_.pop();
                 continue;
             }
-        }
 
-        utils::spin_pause();
+            utils::spin_pause();
+        }
     }
 
     void stop() {running_.store(false, std::memory_order_relaxed);};
@@ -102,7 +104,7 @@ private:
 
         return std::snprintf(buf, buf_size,
             "{"
-            "\"ts\":%lld\","
+            "\"ts\":%lld,"
             "\"sym\":\"%s\","
             "\"type\":\"%s\","
             "\"dir\":\"%s\","
@@ -114,6 +116,15 @@ private:
             dir_str,
             sig.value
         );
+    }
+
+
+    static constexpr std::string_view symbol_to_str(SigSymbol s) noexcept{
+        switch (s) {
+            case SigSymbol::BTCUSDT: return "BTCUSDT";
+            case SigSymbol::ETHUSDT: return "ETHUSDT";
+            default: return "UNKNOWN";
+        }
     }
 
     //partitions 0,1,2
@@ -130,15 +141,16 @@ private:
     }
 
     rd_kafka_resp_err_t try_produce(int32_t partition,
-                                    SigSymbol key,
-                                    std::size_t key_len,
+                                    std::string_view key,
+                                    const char* payload,
                                     std::size_t val_len) {
         return rd_kafka_producev(
             rk_,
             RD_KAFKA_V_TOPIC(TOPIC),
             RD_KAFKA_V_PARTITION(partition),
             RD_KAFKA_V_MSGFLAGS(RD_KAFKA_MSG_F_COPY),
-            RD_KAFKA_V_KEY(&key, key_len),
+            RD_KAFKA_V_KEY(key.data(), key.size()),
+            RD_KAFKA_V_VALUE(const_cast<char*>(payload), val_len),
             RD_KAFKA_V_OPAQUE(nullptr),
             RD_KAFKA_V_END
         );
@@ -152,13 +164,14 @@ private:
         }
 
         const int32_t partition = partition_for(sig);
-        const size_t key_len = sizeof(sig.symbol);
+        std::string_view symbol_str = symbol_to_str(sig.symbol);
 
-        auto err = try_produce(partition, sig.symbol, key_len, len);
+
+        auto err = try_produce(partition, symbol_str, ser_buf_, len);
 
         if (err == RD_KAFKA_RESP_ERR__QUEUE_FULL) {
             rd_kafka_poll(rk_, 10);
-            err = try_produce(partition, sig.symbol, key_len, len);
+            err = try_produce(partition, symbol_str, ser_buf_, len);
         }
 
         if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
